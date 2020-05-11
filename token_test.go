@@ -1,34 +1,34 @@
 package blizzauth
 
 import (
+	"reflect"
 	"testing"
 )
 
-func TestGetToken(t *testing.T) {
+func TestGetAuth(t *testing.T) {
 	type args struct {
 		apiName string
 	}
 	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
+		name  string
+		args  args
+		wantT *Auth
 	}{
 		{
-			"normal",
+			"test",
 			args{
-				"cap",
+				"test_api",
 			},
-			false,
+			&Auth{
+				clientName: "test_api",
+			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := GetToken(tt.args.apiName)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GetToken() error = %v, wantErr %v", err, tt.wantErr)
-				return
+			if gotT := GetAuth(tt.args.apiName); !reflect.DeepEqual(gotT, tt.wantT) {
+				t.Errorf("GetAuth() = %v, want %v", gotT, tt.wantT)
 			}
-
 		})
 	}
 }
