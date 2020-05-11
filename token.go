@@ -14,12 +14,14 @@ import (
 const (
 	tokenURL      = "https://us.battle.net/oauth/token?grant_type=client_credentials"
 	checkTokenURL = "https://us.battle.net/oauth/check_token?token=%v"
+	ErrNoKeys     = "no keys found"
 )
 
 type Auth struct {
 	request    string
 	expiration int64
 	clientName string
+	keys       keys
 }
 
 // tokenResp is the response when requesting a token.
@@ -35,13 +37,9 @@ type tokenStatus struct {
 	ClientID   string `json:"client_id"`
 }
 
-var apiTokenLock map[string]sync.Mutex
+var apiTokenLock sync.Mutex
 
 var cachedToken sync.Map
-
-func init() {
-	apiTokenLock = map[string]sync.Mutex{}
-}
 
 func getCachedAuth(apiName string) (t *Auth) {
 	ct, ok := cachedToken.Load(apiName)
@@ -57,25 +55,30 @@ func setCachedAuth(t *Auth) {
 }
 
 // GetAuth based on the name of the API key filenames in the .blizzard directory that you want to get authorization for.
-func GetAuth(apiName string) (t *Auth) {
+func GetAuth(apiName string) (t *Auth, err error) {
 
 	// no cached token get a new one
-	lock, _ := apiTokenLock[apiName]
-	lock.Lock()
-	defer lock.Unlock()
+	apiTokenLock.Lock()
+	defer apiTokenLock.Unlock()
 	// we obtained the lock make sure that someone else didn't generate the token
 	ct := getCachedAuth(apiName)
 	if ct != nil {
-		return ct
+		return ct, nil
 	}
 
 	// create a new one
 	var auth Auth
 	// cache the auth
 	auth.clientName = apiName
+	keys := newKeys(auth.clientName)
+	if keys == nil {
+		log.Println("Unable to get keys. Check that you have keys <api_name>.id and <api_name>.secret in $HOME/.blizzard")
+		return nil, errors.New(ErrNoKeys)
+	}
+	auth.keys = *keys
 	setCachedAuth(&auth)
 
-	return &auth
+	return &auth, nil
 }
 
 //clearToken if there is an error
@@ -84,16 +87,6 @@ func (a *Auth) clearToken() {
 }
 func (a *Auth) isExpired() bool {
 	return a.expiration < time.Now().Unix()
-}
-
-func (a *Auth) lock() {
-	lock, _ := apiTokenLock[a.clientName]
-	lock.Lock()
-}
-
-func (a *Auth) unlock() {
-	lock, _ := apiTokenLock[a.clientName]
-	lock.Unlock()
 }
 
 func (a *Auth) needNewToken() bool {
@@ -111,25 +104,19 @@ func (a *Auth) needNewToken() bool {
 
 // GetAccessToken get an access token or request a new one if current is expired
 func (a *Auth) GetAccessToken() (string, error) {
-	a.lock()
-	defer a.unlock()
+	apiTokenLock.Lock()
+	defer apiTokenLock.Unlock()
 	if !a.needNewToken() {
 		return a.request, nil
 	}
 	a.clearToken()
 	log.Println("GetAccessToken Request new token")
 
-	keys := newKeys(a.clientName)
-	if keys == nil {
-		log.Println("Unable to get keys")
-		return "", errors.New("cannot load key for token request")
-	}
-
 	req, err := http.NewRequest("POST", tokenURL, nil)
 	if err != nil {
 		log.Fatalln("GetToken can't create new request", err)
 	}
-	req.SetBasicAuth(keys.id, keys.secret)
+	req.SetBasicAuth(a.keys.id, a.keys.secret)
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
