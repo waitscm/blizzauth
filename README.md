@@ -19,7 +19,7 @@ chmod 400 ~/.blizzard/you_api_name.secret
 ## Usage
 
 ```
-auth := blizzauth.GetAuth("your_api_name")
+auth, err := blizzauth.GetAuth("your_api_name")
 ...
 // When you need to use an access token
 token, _ := auth.GetAccessToken()
